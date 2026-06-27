@@ -23,7 +23,7 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna()
     return df
 
-df = preprocess(pd.read_csv("komuter_datetime.csv", parse_dates=["datetime"]))
+df = preprocess(pd.read_csv("../dataset/komuter_datetime.csv", parse_dates=["datetime"]))
 
 split_date = "2026-06-01"
 train_df = df[df["datetime"] < split_date]
