@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import holidays
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OrdinalEncoder
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from lightgbm import LGBMRegressor
 
@@ -22,7 +22,8 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     df["week_cos"] = np.cos(2 * np.pi * df["week"] / 52)
     df["dom_sin"] = np.sin(2 * np.pi * df["day_of_month"] / 31)
     df["dom_cos"] = np.cos(2 * np.pi * df["day_of_month"] / 31)
-    my_holidays = holidays.Malaysia(years=range(int(df["year"].min()), int(df["year"].max()) + 1))
+    years: list[int] = list(range(int(df["year"].to_numpy().min()), int(df["year"].to_numpy().max()) + 1))
+    my_holidays = holidays.Malaysia(years=years)
     df["is_holiday"] = df["datetime"].dt.date.isin(my_holidays).astype(int)
     for lag, name in [(1, "lag_1h"), (2, "lag_2h"), (3, "lag_3h"), (24, "lag_24h"), (48, "lag_48h"), (72, "lag_72h"), (168, "lag_1w"), (336, "lag_2w"), (504, "lag_3w"), (672, "lag_4w")]:
         df[name] = df.groupby(["origin", "destination"])["ridership"].shift(lag)
@@ -60,19 +61,18 @@ num_features = [
     "origin_mean", "origin_std", "destination_mean", "destination_std", "route_mean", "route_std",
 ]
 
-encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+encoder = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
 encoder.fit(train_df[cat_features])
-cat_cols = encoder.get_feature_names_out(cat_features).tolist()
 
 chunksize = 500000
-model = LGBMRegressor(random_state=42, verbose=-1)
+model = LGBMRegressor(random_state=42, verbose=-1, n_estimators=1)
 
 for i in range(0, len(train_df), chunksize):
     chunk = train_df.iloc[i:i + chunksize]
     X_cat = encoder.transform(chunk[cat_features])
-    X = pd.DataFrame(X_cat, columns=cat_cols, index=chunk.index).join(chunk[num_features])
+    X = pd.DataFrame(X_cat, columns=pd.Index(cat_features), index=chunk.index).join(chunk[num_features])
     y = np.log1p(chunk["ridership"])
-    model.fit(X, y, init_model=model if i > 0 else None)
+    model.fit(X, y, categorical_feature=cat_features, init_model=model if i > 0 else None)
 
 y_true = []
 y_pred = []
@@ -80,7 +80,7 @@ y_pred = []
 for i in range(0, len(test_df), chunksize):
     chunk = test_df.iloc[i:i + chunksize]
     X_cat = encoder.transform(chunk[cat_features])
-    X = pd.DataFrame(X_cat, columns=cat_cols, index=chunk.index).join(chunk[num_features])
+    X = pd.DataFrame(X_cat, columns=pd.Index(cat_features), index=chunk.index).join(chunk[num_features])
     pred = np.expm1(np.asarray(model.predict(X)))
     y_true.extend(chunk["ridership"])
     y_pred.extend(pred)
