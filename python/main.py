@@ -38,21 +38,30 @@ num_features = [
 ]
 
 encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
-X_train_cat = encoder.fit_transform(train_df[cat_features])
-X_test_cat = encoder.transform(test_df[cat_features])
+encoder.fit(train_df[cat_features])
 cat_cols = encoder.get_feature_names_out(cat_features).tolist()
 
-X_train = pd.DataFrame(X_train_cat, columns=cat_cols, index=train_df.index).join(train_df[num_features])
-X_test = pd.DataFrame(X_test_cat, columns=cat_cols, index=test_df.index).join(test_df[num_features])
-
-y_train = np.log1p(train_df["ridership"])
-y_test = test_df["ridership"]
-
+chunksize = 500000
 model = LGBMRegressor(random_state=42, verbose=-1)
-model.fit(X_train, y_train)
 
-pred = np.expm1(np.asarray(model.predict(X_test)))
+for i in range(0, len(train_df), chunksize):
+    chunk = train_df.iloc[i:i + chunksize]
+    X_cat = encoder.transform(chunk[cat_features])
+    X = pd.DataFrame(X_cat, columns=cat_cols, index=chunk.index).join(chunk[num_features])
+    y = np.log1p(chunk["ridership"])
+    model.fit(X, y, init_model=model if i > 0 else None)
 
-print("RMSE:", np.sqrt(mean_squared_error(y_test, pred)))
-print("MAE:", mean_absolute_error(y_test, pred))
-print("R²:", r2_score(y_test, pred))
+y_true = []
+y_pred = []
+
+for i in range(0, len(test_df), chunksize):
+    chunk = test_df.iloc[i:i + chunksize]
+    X_cat = encoder.transform(chunk[cat_features])
+    X = pd.DataFrame(X_cat, columns=cat_cols, index=chunk.index).join(chunk[num_features])
+    pred = np.expm1(np.asarray(model.predict(X)))
+    y_true.extend(chunk["ridership"])
+    y_pred.extend(pred)
+
+print("RMSE:", np.sqrt(mean_squared_error(y_true, y_pred)))
+print("MAE:", mean_absolute_error(y_true, y_pred))
+print("R²:", r2_score(y_true, y_pred))
