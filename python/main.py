@@ -2,9 +2,12 @@ import pandas as pd
 import numpy as np
 import holidays
 import pickle
+import sys
 from sklearn.preprocessing import OrdinalEncoder
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from lightgbm import LGBMRegressor
+from lightgbm import LGBMRegressor, Booster
+
+PREDICT = len(sys.argv) > 1 and sys.argv[1] == "predict"
 
 def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(["origin", "destination", "datetime"])
@@ -54,14 +57,23 @@ encoder = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
 encoder.fit(train_df[cat_features])
 
 chunksize = 500000
-model = LGBMRegressor(random_state=42, verbose=-1, n_estimators=1)
 
-for i in range(0, len(train_df), chunksize):
-    chunk = train_df.iloc[i:i + chunksize]
-    X_cat = encoder.transform(chunk[cat_features])
-    X = pd.DataFrame(X_cat, columns=pd.Index(cat_features), index=chunk.index).join(chunk[num_features])
-    y = np.log1p(chunk["ridership"])
-    model.fit(X, y, categorical_feature=cat_features, init_model=model if i > 0 else None)
+if PREDICT:
+    model = Booster(model_file="model.txt")
+else:
+    model = LGBMRegressor(random_state=42, verbose=-1, n_estimators=1)
+    for i in range(0, len(train_df), chunksize):
+        chunk = train_df.iloc[i:i + chunksize]
+        X_cat = encoder.transform(chunk[cat_features])
+        X = pd.DataFrame(X_cat, columns=pd.Index(cat_features), index=chunk.index).join(chunk[num_features])
+        y = np.log1p(chunk["ridership"])
+        model.fit(X, y, categorical_feature=cat_features, init_model=model if i > 0 else None)
+    model.booster_.save_model("model.txt")
+    with open("encoder.pkl", "wb") as f:
+        pickle.dump(encoder, f)
+    importance = pd.Series(model.feature_importances_, index=cat_features + num_features).sort_values(ascending=False)
+    print("\nFeature importance:")
+    print(importance)
 
 y_true = []
 y_pred = []
@@ -77,11 +89,3 @@ for i in range(0, len(test_df), chunksize):
 print("RMSE:", np.sqrt(mean_squared_error(y_true, y_pred)))
 print("MAE:", mean_absolute_error(y_true, y_pred))
 print("R²:", r2_score(y_true, y_pred))
-
-importance = pd.Series(model.feature_importances_, index=cat_features + num_features).sort_values(ascending=False)
-print("\nFeature importance:")
-print(importance)
-
-model.booster_.save_model("model.txt")
-with open("encoder.pkl", "wb") as f:
-    pickle.dump(encoder, f)
