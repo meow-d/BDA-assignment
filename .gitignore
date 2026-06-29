@@ -1,2 +1,5 @@
 .venv
 .letta
+*.pkl
+model.txt
+__pycache__/
