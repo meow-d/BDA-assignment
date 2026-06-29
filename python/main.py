@@ -9,6 +9,18 @@ from lightgbm import LGBMRegressor, Booster
 
 PREDICT = len(sys.argv) > 1 and sys.argv[1] == "predict"
 
+CAT_FEATURES = ["origin", "destination"]
+NUM_FEATURES = [
+    "hour", "day", "is_holiday",
+    "hour_sin", "hour_cos",
+    "lag_1h", "lag_2h", "lag_3h",
+    "rolling_mean_3", "rolling_mean_6", "rolling_mean_24", "rolling_mean_168", "rolling_mean_336", "rolling_mean_672",
+    "rolling_std_168", "rolling_std_336",
+    "origin_mean", "destination_mean", "destination_std", "route_mean", "route_std",
+]
+CHUNKSIZE = 500000
+
+
 def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(["origin", "destination", "datetime"])
     df["hour"] = df["datetime"].dt.hour
@@ -31,61 +43,70 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna()
     return df
 
-df = preprocess(pd.read_csv("../dataset/komuter_combined.csv", parse_dates=["datetime"]))
 
-split_date = "2026-06-01"
-train_df = df[df["datetime"] < split_date]
-test_df = df[df["datetime"] >= split_date]
+def target_encode(train_df: pd.DataFrame, test_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    for key, cols in [("origin", ["origin"]), ("destination", ["destination"]), ("route", ["origin", "destination"])]:
+        stats = pd.DataFrame(train_df.groupby(cols)["ridership"].agg(["mean", "std"]))
+        stats.columns = [f"{key}_mean", f"{key}_std"]
+        train_df = train_df.merge(stats, on=cols, how="left")
+        test_df = test_df.merge(stats, on=cols, how="left")
+    return train_df, test_df
 
-for key, cols in [("origin", ["origin"]), ("destination", ["destination"]), ("route", ["origin", "destination"])]:
-    stats = pd.DataFrame(train_df.groupby(cols)["ridership"].agg(["mean", "std"]))
-    stats.columns = [f"{key}_mean", f"{key}_std"]
-    train_df = train_df.merge(stats, on=cols, how="left")
-    test_df = test_df.merge(stats, on=cols, how="left")
 
-cat_features = ["origin", "destination"]
-num_features = [
-    "hour", "day", "is_holiday",
-    "hour_sin", "hour_cos",
-    "lag_1h", "lag_2h", "lag_3h",
-    "rolling_mean_3", "rolling_mean_6", "rolling_mean_24", "rolling_mean_168", "rolling_mean_336", "rolling_mean_672",
-    "rolling_std_168", "rolling_std_336",
-    "origin_mean", "destination_mean", "destination_std", "route_mean", "route_std",
-]
+def make_X(chunk: pd.DataFrame, encoder: OrdinalEncoder) -> pd.DataFrame:
+    X_cat = encoder.transform(chunk[CAT_FEATURES])
+    return pd.DataFrame(X_cat, columns=pd.Index(CAT_FEATURES), index=chunk.index).join(chunk[NUM_FEATURES])
 
-encoder = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
-encoder.fit(train_df[cat_features])
 
-chunksize = 500000
-
-if PREDICT:
-    model = Booster(model_file="model.txt")
-else:
+def train_model(train_df: pd.DataFrame, encoder: OrdinalEncoder) -> LGBMRegressor:
     model = LGBMRegressor(random_state=42, verbose=-1, n_estimators=1)
-    for i in range(0, len(train_df), chunksize):
-        chunk = train_df.iloc[i:i + chunksize]
-        X_cat = encoder.transform(chunk[cat_features])
-        X = pd.DataFrame(X_cat, columns=pd.Index(cat_features), index=chunk.index).join(chunk[num_features])
+    for i in range(0, len(train_df), CHUNKSIZE):
+        chunk = train_df.iloc[i:i + CHUNKSIZE]
+        X = make_X(chunk, encoder)
         y = np.log1p(chunk["ridership"])
-        model.fit(X, y, categorical_feature=cat_features, init_model=model if i > 0 else None)
+        model.fit(X, y, categorical_feature=CAT_FEATURES, init_model=model if i > 0 else None)
     model.booster_.save_model("model.txt")
     with open("encoder.pkl", "wb") as f:
         pickle.dump(encoder, f)
-    importance = pd.Series(model.feature_importances_, index=cat_features + num_features).sort_values(ascending=False)
+    importance = pd.Series(model.feature_importances_, index=CAT_FEATURES + NUM_FEATURES).sort_values(ascending=False)
     print("\nFeature importance:")
     print(importance)
+    return model
 
-y_true = []
-y_pred = []
 
-for i in range(0, len(test_df), chunksize):
-    chunk = test_df.iloc[i:i + chunksize]
-    X_cat = encoder.transform(chunk[cat_features])
-    X = pd.DataFrame(X_cat, columns=pd.Index(cat_features), index=chunk.index).join(chunk[num_features])
-    pred = np.expm1(np.asarray(model.predict(X)))
-    y_true.extend(chunk["ridership"])
-    y_pred.extend(pred)
+def evaluate(model: LGBMRegressor | Booster, test_df: pd.DataFrame, encoder: OrdinalEncoder) -> None:
+    y_true = []
+    y_pred = []
+    for i in range(0, len(test_df), CHUNKSIZE):
+        chunk = test_df.iloc[i:i + CHUNKSIZE]
+        X = make_X(chunk, encoder)
+        pred = np.expm1(np.asarray(model.predict(X)))
+        y_true.extend(chunk["ridership"])
+        y_pred.extend(pred)
+    print("RMSE:", np.sqrt(mean_squared_error(y_true, y_pred)))
+    print("MAE:", mean_absolute_error(y_true, y_pred))
+    print("R²:", r2_score(y_true, y_pred))
 
-print("RMSE:", np.sqrt(mean_squared_error(y_true, y_pred)))
-print("MAE:", mean_absolute_error(y_true, y_pred))
-print("R²:", r2_score(y_true, y_pred))
+
+def main():
+    df = preprocess(pd.read_csv("../dataset/komuter_combined.csv", parse_dates=["datetime"]))
+
+    split_date = "2026-06-01"
+    train_df = pd.DataFrame(df[df["datetime"] < split_date])
+    test_df = pd.DataFrame(df[df["datetime"] >= split_date])
+
+    train_df, test_df = target_encode(train_df, test_df)
+
+    encoder = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
+    encoder.fit(train_df[CAT_FEATURES])
+
+    if PREDICT:
+        model = Booster(model_file="model.txt")
+    else:
+        model = train_model(train_df, encoder)
+
+    evaluate(model, test_df, encoder)
+
+
+if __name__ == "__main__":
+    main()
