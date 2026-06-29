@@ -3,11 +3,12 @@ import numpy as np
 import holidays
 import pickle
 import sys
+import matplotlib.pyplot as plt
 from sklearn.preprocessing import OrdinalEncoder
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from lightgbm import LGBMRegressor, Booster
 
-PREDICT = len(sys.argv) > 1 and sys.argv[1] == "predict"
+MODE = sys.argv[1] if len(sys.argv) > 1 else "train"
 
 CAT_FEATURES = ["origin", "destination"]
 NUM_FEATURES = [
@@ -59,18 +60,20 @@ def make_X(chunk: pd.DataFrame, encoder: OrdinalEncoder) -> pd.DataFrame:
 
 
 def train_model(train_df: pd.DataFrame, encoder: OrdinalEncoder) -> LGBMRegressor:
-    model = LGBMRegressor(random_state=42, verbose=-1, n_estimators=1)
+    model = LGBMRegressor(random_state=42, verbose=-1, n_estimators=1, objective="quantile", alpha=0.8)
     for i in range(0, len(train_df), CHUNKSIZE):
         chunk = train_df.iloc[i:i + CHUNKSIZE]
         X = make_X(chunk, encoder)
         y = np.log1p(chunk["ridership"])
         model.fit(X, y, categorical_feature=CAT_FEATURES, init_model=model if i > 0 else None)
+
     model.booster_.save_model("model.txt")
     with open("encoder.pkl", "wb") as f:
         pickle.dump(encoder, f)
     importance = pd.Series(model.feature_importances_, index=CAT_FEATURES + NUM_FEATURES).sort_values(ascending=False)
     print("\nFeature importance:")
     print(importance)
+
     return model
 
 
@@ -88,6 +91,30 @@ def evaluate(model: LGBMRegressor | Booster, test_df: pd.DataFrame, encoder: Ord
     print("R²:", r2_score(y_true, y_pred))
 
 
+def visualize(model: LGBMRegressor | Booster, test_df: pd.DataFrame, encoder: OrdinalEncoder) -> None:
+    y_true = []
+    y_pred = []
+    datetimes = []
+    for i in range(0, len(test_df), CHUNKSIZE):
+        chunk = test_df.iloc[i:i + CHUNKSIZE]
+        X = make_X(chunk, encoder)
+        pred = np.expm1(np.asarray(model.predict(X)))
+        y_true.extend(chunk["ridership"])
+        y_pred.extend(pred)
+        datetimes.extend(chunk["datetime"])
+    results = pd.DataFrame({"datetime": datetimes, "actual": y_true, "predicted": y_pred})
+    agg = results.groupby("datetime").agg({"actual": "sum", "predicted": "sum"}).reset_index()
+    plt.figure(figsize=(14, 5))
+    plt.plot(agg["datetime"], agg["actual"], label="Actual", alpha=0.7)
+    plt.plot(agg["datetime"], agg["predicted"], label="Predicted", alpha=0.7)
+    plt.xlabel("Datetime")
+    plt.ylabel("Total Ridership")
+    plt.title("Ridership: Actual vs Predicted")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
 def main():
     df = preprocess(pd.read_csv("../dataset/komuter_combined.csv", parse_dates=["datetime"]))
 
@@ -100,12 +127,15 @@ def main():
     encoder = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
     encoder.fit(train_df[CAT_FEATURES])
 
-    if PREDICT:
+    if MODE in ("predict", "visualize"):
         model = Booster(model_file="model.txt")
     else:
         model = train_model(train_df, encoder)
 
-    evaluate(model, test_df, encoder)
+    if MODE == "visualize":
+        visualize(model, test_df, encoder)
+    else:
+        evaluate(model, test_df, encoder)
 
 
 if __name__ == "__main__":
