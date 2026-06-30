@@ -7,11 +7,17 @@
 - python - alternative python version just for testing. uses uv
 - rapidminer - rapidminer project, and imported rapidminer dataset
 
-## commands
+## common commands
 ```
+# run
 cd python
+source .venv/bin/activate.fish
 uv run main.py # train
 uv run main.py predict # use existing model
+
+# check
+uvx ty check
+pyright main.py # alternative
 ```
 
 ## agent instructions
