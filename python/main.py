@@ -83,7 +83,7 @@ def train_model(train_df: pd.DataFrame, encoder: OrdinalEncoder) -> Booster:
     X = make_X(train_df, encoder)
     y = np.log1p(train_df["ridership"])
     train_set = lgb.Dataset(X, label=y, categorical_feature=CAT_FEATURES)
-    model = lgb.train(params, train_set)
+    model = lgb.train(params, train_set, callbacks=[lgb.early_stopping(20)])
 
     return model
 
@@ -154,6 +154,7 @@ def tune(train_df: pd.DataFrame, encoder: OrdinalEncoder) -> Booster:
         valid_sets=val_set,
         study=study,
         optuna_seed=42,
+        model_dir="./",
     )
     tuner.run()
 
