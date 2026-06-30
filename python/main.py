@@ -3,6 +3,7 @@ import numpy as np
 import holidays
 import pickle
 import sys
+import os
 import matplotlib.pyplot as plt
 import optuna
 from typing import Any
@@ -66,6 +67,7 @@ def train_model(train_df: pd.DataFrame, encoder: OrdinalEncoder) -> LGBMRegresso
     model = LGBMRegressor(
         random_state=42,
         verbose=1,
+        force_col_wise=True,
         boosting_type="gbdt",
         objective="quantile",
         num_leaves=94,
@@ -155,6 +157,7 @@ def tune(train_df: pd.DataFrame, encoder: OrdinalEncoder) -> None:
             "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
             "random_state": 42,
             "verbose": -1,
+            "force_col_wise": True,
         }
         if obj == "quantile":
             params["alpha"] = trial.suggest_float("alpha", 0.1, 0.9)
@@ -178,7 +181,12 @@ def tune(train_df: pd.DataFrame, encoder: OrdinalEncoder) -> None:
 
 
 def main():
-    df = preprocess(pd.read_csv("../dataset/komuter_combined.csv", parse_dates=["datetime"]))
+    cache_path = "../dataset/komuter_lightgbm_preprocessed.csv"
+    if os.path.exists(cache_path):
+        df = pd.read_csv(cache_path, parse_dates=["datetime"])
+    else:
+        df = preprocess(pd.read_csv("../dataset/komuter_combined.csv", parse_dates=["datetime"]))
+        df.to_csv(cache_path, index=False)
 
     split_date = "2026-06-01"
     train_df = pd.DataFrame(df[df["datetime"] < split_date])
