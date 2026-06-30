@@ -49,13 +49,14 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def target_encode(train_df: pd.DataFrame, test_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def target_encode(train_df: pd.DataFrame, val_df: pd.DataFrame, test_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     for key, cols in [("origin", ["origin"]), ("destination", ["destination"]), ("route", ["origin", "destination"])]:
         stats = pd.DataFrame(train_df.groupby(cols)["ridership"].agg(["mean", "std"]))
         stats.columns = [f"{key}_mean", f"{key}_std"]
         train_df = train_df.merge(stats, on=cols, how="left")
+        val_df = val_df.merge(stats, on=cols, how="left")
         test_df = test_df.merge(stats, on=cols, how="left")
-    return train_df, test_df
+    return train_df, val_df, test_df
 
 
 def make_X(chunk: pd.DataFrame, encoder: OrdinalEncoder) -> pd.DataFrame:
@@ -63,27 +64,30 @@ def make_X(chunk: pd.DataFrame, encoder: OrdinalEncoder) -> pd.DataFrame:
     return pd.DataFrame(X_cat, columns=pd.Index(CAT_FEATURES), index=chunk.index).join(chunk[NUM_FEATURES])
 
 
-def train_model(train_df: pd.DataFrame, encoder: OrdinalEncoder) -> Booster:
+def train_model(train_df: pd.DataFrame, val_df: pd.DataFrame, encoder: OrdinalEncoder) -> Booster:
     # optimum hyperparameters found using optuna
     params: dict[str, Any] = {
         "random_state": 42,
         "verbose": 1,
         "force_col_wise": True,
-        "n_estimators": 1,
         "boosting_type": "gbdt",
-        "num_leaves": 94,
+        "num_leaves": 47,
         "learning_rate": 0.12338927224763702,
         "min_child_samples": 29,
         "subsample": 0.7526667257286987,
         "subsample_freq": 1,
         "colsample_bytree": 0.9413895414693264,
+        "feature_fraction": 0.4,
         "objective": "quantile",
         "alpha": 0.657140860312094,
     }
     X = make_X(train_df, encoder)
     y = np.log1p(train_df["ridership"])
     train_set = lgb.Dataset(X, label=y, categorical_feature=CAT_FEATURES)
-    model = lgb.train(params, train_set, callbacks=[lgb.early_stopping(20)])
+    X_val = make_X(val_df, encoder)
+    y_val = np.log1p(val_df["ridership"])
+    val_set = lgb.Dataset(X_val, label=y_val, categorical_feature=CAT_FEATURES, reference=train_set)
+    model = lgb.train(params, train_set, valid_sets=[val_set], callbacks=[lgb.early_stopping(20)])
 
     return model
 
@@ -122,14 +126,11 @@ def evaluate(model: Booster, test_df: pd.DataFrame, encoder: OrdinalEncoder) -> 
     plt.show()
 
 
-def tune(train_df: pd.DataFrame, encoder: OrdinalEncoder) -> Booster:
-    split_idx = int(len(train_df) * 0.8)
-    train_sample = train_df.iloc[:split_idx]
-    val_sample = train_df.iloc[split_idx:]
-    X_train = make_X(train_sample, encoder)
-    y_train = np.log1p(train_sample["ridership"])
-    X_val = make_X(val_sample, encoder)
-    y_val = np.log1p(val_sample["ridership"])
+def tune(train_df: pd.DataFrame, val_df: pd.DataFrame, encoder: OrdinalEncoder) -> Booster:
+    X_train = make_X(train_df, encoder)
+    y_train = np.log1p(train_df["ridership"])
+    X_val = make_X(val_df, encoder)
+    y_val = np.log1p(val_df["ridership"])
 
     train_set = lgb.Dataset(X_train, label=y_train, categorical_feature=CAT_FEATURES, free_raw_data=False)
     val_set = lgb.Dataset(X_val, label=y_val, categorical_feature=CAT_FEATURES, reference=train_set)
@@ -152,6 +153,7 @@ def tune(train_df: pd.DataFrame, encoder: OrdinalEncoder) -> Booster:
         params,
         train_set,
         valid_sets=val_set,
+        callbacks=[lgb.early_stopping(20)],
         study=study,
         optuna_seed=42,
         model_dir="./",
@@ -173,11 +175,14 @@ def main():
         df = preprocess(pd.read_csv("../dataset/komuter_combined.csv", parse_dates=["datetime"]))
         df.to_csv(cache_path, index=False)
 
-    split_date = "2026-06-01"
-    train_df = pd.DataFrame(df[df["datetime"] < split_date])
-    test_df = pd.DataFrame(df[df["datetime"] >= split_date])
+    test_split_date = "2026-06-01"
+    test_df = pd.DataFrame(df[df["datetime"] >= test_split_date])
+    remaining = pd.DataFrame(df[df["datetime"] < test_split_date]).sort_values("datetime")
+    split_idx = int(len(remaining) * 0.8)
+    train_df = remaining.iloc[:split_idx].copy()
+    val_df = remaining.iloc[split_idx:].copy()
 
-    train_df, test_df = target_encode(train_df, test_df)
+    train_df, val_df, test_df = target_encode(train_df, val_df, test_df)
 
     encoder = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
     encoder.fit(train_df[CAT_FEATURES])
@@ -185,10 +190,10 @@ def main():
     if MODE == "predict":
         model = Booster(model_file="model.txt")
     elif MODE == "tune":
-        model = tune(train_df, encoder)
+        model = tune(train_df, val_df, encoder)
         save_model(model, encoder)
     else:
-        model = train_model(train_df, encoder)
+        model = train_model(train_df, val_df, encoder)
         save_model(model, encoder)
 
     evaluate(model, test_df, encoder)
