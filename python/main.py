@@ -6,6 +6,7 @@ import sys
 import os
 import matplotlib.pyplot as plt
 import optuna
+from optuna_integration.lightgbm import LightGBMTuner
 from typing import Any
 from sklearn.preprocessing import OrdinalEncoder
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
@@ -84,17 +85,22 @@ def train_model(train_df: pd.DataFrame, encoder: OrdinalEncoder) -> Booster:
     train_set = lgb.Dataset(X, label=y, categorical_feature=CAT_FEATURES)
     model = lgb.train(params, train_set)
 
+    return model
+
+
+def save_model(model: Booster, encoder: OrdinalEncoder) -> None:
     model.save_model("model.txt")
     with open("encoder.pkl", "wb") as f:
         pickle.dump(encoder, f)
+
+
+def evaluate(model: Booster, test_df: pd.DataFrame, encoder: OrdinalEncoder) -> None:
+    # feature importance
     importance = pd.Series(model.feature_importance(), index=CAT_FEATURES + NUM_FEATURES).sort_values(ascending=False)
     print("\nFeature importance:")
     print(importance)
 
-    return model
-
-
-def evaluate(model: Booster, test_df: pd.DataFrame, encoder: OrdinalEncoder) -> None:
+    # the actual eval
     X = make_X(test_df, encoder)
     pred = np.expm1(np.asarray(model.predict(X)))
     y_true = test_df["ridership"]
@@ -102,10 +108,7 @@ def evaluate(model: Booster, test_df: pd.DataFrame, encoder: OrdinalEncoder) -> 
     print("MAE:", mean_absolute_error(y_true, pred))
     print("R²:", r2_score(y_true, pred))
 
-
-def visualize(model: Booster, test_df: pd.DataFrame, encoder: OrdinalEncoder) -> None:
-    X = make_X(test_df, encoder)
-    pred = np.expm1(np.asarray(model.predict(X)))
+    # visualize
     results = pd.DataFrame({"datetime": test_df["datetime"], "actual": test_df["ridership"], "predicted": pred})
     agg = results.groupby("datetime").agg({"actual": "sum", "predicted": "sum"}).reset_index()
     plt.figure(figsize=(14, 5))
@@ -120,43 +123,23 @@ def visualize(model: Booster, test_df: pd.DataFrame, encoder: OrdinalEncoder) ->
 
 
 def tune(train_df: pd.DataFrame, encoder: OrdinalEncoder) -> Booster:
-    # sample = train_df.sample(n=100000, random_state=42)
-    sample = train_df
-    split_idx = int(len(sample) * 0.8)
-    train_sample = sample.iloc[:split_idx]
-    val_sample = sample.iloc[split_idx:]
+    split_idx = int(len(train_df) * 0.8)
+    train_sample = train_df.iloc[:split_idx]
+    val_sample = train_df.iloc[split_idx:]
     X_train = make_X(train_sample, encoder)
     y_train = np.log1p(train_sample["ridership"])
     X_val = make_X(val_sample, encoder)
-    y_val = val_sample["ridership"]
+    y_val = np.log1p(val_sample["ridership"])
 
     train_set = lgb.Dataset(X_train, label=y_train, categorical_feature=CAT_FEATURES, free_raw_data=False)
+    val_set = lgb.Dataset(X_val, label=y_val, categorical_feature=CAT_FEATURES, reference=train_set)
 
-    def objective(trial: optuna.Trial) -> float:
-        boosting = trial.suggest_categorical("boosting_type", ["gbdt", "dart", "goss"])
-        obj = trial.suggest_categorical("objective", ["regression", "regression_l1", "quantile", "huber"])
-        params: dict[str, Any] = {
-            "random_state": 42,
-            "verbose": -1,
-            "force_col_wise": True,
-            "n_estimators": 1,
-            # "n_estimators": trial.suggest_int("n_estimators", 50, 1000),
-            "boosting_type": boosting,
-            "num_leaves": trial.suggest_int("num_leaves", 31, 127),
-            "learning_rate": trial.suggest_float("learning_rate", 0.05, 0.2),
-            "min_child_samples": trial.suggest_int("min_child_samples", 10, 100),
-            "subsample": 1.0 if boosting == "goss" else trial.suggest_float("subsample", 0.6, 1.0),
-            "subsample_freq": 1,
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
-            "objective": obj,
-        }
-        if obj == "quantile":
-            params["alpha"] = trial.suggest_float("alpha", 0.1, 0.9)
-        elif obj == "huber":
-            params["alpha"] = trial.suggest_float("alpha", 0.1, 10.0)
-        model = lgb.train(params, train_set)
-        pred = np.expm1(np.asarray(model.predict(X_val)))
-        return float(np.sqrt(mean_squared_error(y_val, pred)))
+    params: dict[str, Any] = {
+        "random_state": 42,
+        "verbose": -1,
+        "force_col_wise": True,
+        "metric": "rmse"
+    }
 
     study = optuna.create_study(
         direction="minimize",
@@ -164,12 +147,22 @@ def tune(train_df: pd.DataFrame, encoder: OrdinalEncoder) -> Booster:
         storage="sqlite:///optuna.db",
         load_if_exists=True,
     )
-    study.optimize(objective, n_trials=30)
-    print("Best params:")
-    print(study.best_params)
-    print("Best RMSE:", study.best_value)
 
-    return study.user_attrs["best_booster"]
+    tuner = LightGBMTuner(
+        params,
+        train_set,
+        valid_sets=val_set,
+        study=study,
+        optuna_seed=42,
+    )
+    tuner.run()
+
+    print("Best params:")
+    print(tuner.best_params)
+    print("Best score:", tuner.best_score)
+
+    return tuner.get_best_booster()
+
 
 def main():
     cache_path = "../dataset/komuter_lightgbm_preprocessed.csv"
@@ -188,18 +181,16 @@ def main():
     encoder = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
     encoder.fit(train_df[CAT_FEATURES])
 
-    if MODE in ("predict", "visualize"):
+    if MODE == "predict":
         model = Booster(model_file="model.txt")
     elif MODE == "tune":
-        tune(train_df, encoder)
-        return
+        model = tune(train_df, encoder)
+        save_model(model, encoder)
     else:
         model = train_model(train_df, encoder)
+        save_model(model, encoder)
 
-    if MODE == "visualize":
-        visualize(model, test_df, encoder)
-    else:
-        evaluate(model, test_df, encoder)
+    evaluate(model, test_df, encoder)
 
 
 if __name__ == "__main__":

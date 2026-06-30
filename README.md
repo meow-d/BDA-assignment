@@ -15,6 +15,9 @@ source .venv/bin/activate.fish
 uv run main.py # train
 uv run main.py predict # use existing model
 
+# packages
+uv add <package>
+
 # check
 uvx ty check
 pyright main.py # alternative
