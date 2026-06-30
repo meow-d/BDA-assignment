@@ -1,5 +1,6 @@
 .venv
 .letta
 *.pkl
+*.db
 model.txt
 __pycache__/

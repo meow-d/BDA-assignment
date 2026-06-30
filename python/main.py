@@ -4,6 +4,8 @@ import holidays
 import pickle
 import sys
 import matplotlib.pyplot as plt
+import optuna
+from typing import Any
 from sklearn.preprocessing import OrdinalEncoder
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from lightgbm import LGBMRegressor, Booster
@@ -60,7 +62,20 @@ def make_X(chunk: pd.DataFrame, encoder: OrdinalEncoder) -> pd.DataFrame:
 
 
 def train_model(train_df: pd.DataFrame, encoder: OrdinalEncoder) -> LGBMRegressor:
-    model = LGBMRegressor(random_state=42, verbose=-1, n_estimators=1, objective="quantile", alpha=0.8)
+    # optimum hyperparameters found using optuna
+    model = LGBMRegressor(
+        random_state=42,
+        verbose=1,
+        boosting_type="gbdt",
+        objective="quantile",
+        num_leaves=94,
+        learning_rate=0.12338927224763702,
+        n_estimators=916,
+        min_child_samples=29,
+        subsample=0.7526667257286987,
+        colsample_bytree=0.9413895414693264,
+        alpha=0.657140860312094
+    )
     for i in range(0, len(train_df), CHUNKSIZE):
         chunk = train_df.iloc[i:i + CHUNKSIZE]
         X = make_X(chunk, encoder)
@@ -115,6 +130,53 @@ def visualize(model: LGBMRegressor | Booster, test_df: pd.DataFrame, encoder: Or
     plt.show()
 
 
+def tune(train_df: pd.DataFrame, encoder: OrdinalEncoder) -> None:
+    sample = train_df.sample(n=100000, random_state=42)
+    split_idx = int(len(sample) * 0.8)
+    train_sample = sample.iloc[:split_idx]
+    val_sample = sample.iloc[split_idx:]
+    X_train = make_X(train_sample, encoder)
+    y_train = np.log1p(train_sample["ridership"])
+    X_val = make_X(val_sample, encoder)
+    y_val = val_sample["ridership"]
+
+    def objective(trial: optuna.Trial) -> float:
+        boosting = trial.suggest_categorical("boosting_type", ["gbdt", "dart", "goss"])
+        obj = trial.suggest_categorical("objective", ["regression", "regression_l1", "quantile", "huber"])
+        params: dict[str, Any] = {
+            "boosting_type": boosting,
+            "objective": obj,
+            "num_leaves": trial.suggest_int("num_leaves", 31, 127),
+            "learning_rate": trial.suggest_float("learning_rate", 0.05, 0.2),
+            "n_estimators": trial.suggest_int("n_estimators", 50, 1000),
+            "min_child_samples": trial.suggest_int("min_child_samples", 10, 100),
+            "subsample": 1.0 if boosting == "goss" else trial.suggest_float("subsample", 0.6, 1.0),
+            "subsample_freq": 1,
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+            "random_state": 42,
+            "verbose": -1,
+        }
+        if obj == "quantile":
+            params["alpha"] = trial.suggest_float("alpha", 0.1, 0.9)
+        elif obj == "huber":
+            params["alpha"] = trial.suggest_float("alpha", 0.1, 10.0)
+        model = LGBMRegressor(**params)
+        model.fit(X_train, y_train, categorical_feature=CAT_FEATURES)
+        pred = np.expm1(np.asarray(model.predict(X_val)))
+        return float(np.sqrt(mean_squared_error(y_val, pred)))
+
+    study = optuna.create_study(
+        direction="minimize",
+        study_name="komuter",
+        storage="sqlite:///optuna.db",
+        load_if_exists=True,
+    )
+    study.optimize(objective, n_trials=30)
+    print("Best params:")
+    print(study.best_params)
+    print("Best RMSE:", study.best_value)
+
+
 def main():
     df = preprocess(pd.read_csv("../dataset/komuter_combined.csv", parse_dates=["datetime"]))
 
@@ -129,6 +191,9 @@ def main():
 
     if MODE in ("predict", "visualize"):
         model = Booster(model_file="model.txt")
+    elif MODE == "tune":
+        tune(train_df, encoder)
+        return
     else:
         model = train_model(train_df, encoder)
 
