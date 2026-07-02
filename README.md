@@ -8,16 +8,17 @@
 - dataset - csv dataset (git lfs? never heard of her)
   - komuter_2026.csv - original from gov website
   - komuter_datetime.csv - date and time combined
-- python - alternative python version just for testing. uses uv
-- rapidminer - rapidminer project, and imported rapidminer dataset
+- python - lightgbm version. uses uv
+- rapidminer - deep learning version. rapidminer project and imported rapidminer dataset
 
-## common commands
+## lightgbm version
 ```
 # run
 cd python
-source .venv/bin/activate.fish
-uv run main.py # train
-uv run main.py predict # use existing model
+source .venv/bin/activate
+uv run main.py # train model, evaluate, and visualize
+uv run main.py predict # same as default but uses existing saved model
+uv run main.py tune # same as default but runs hyperparameter tuning. takes hours.
 
 # packages
 uv add <package>
