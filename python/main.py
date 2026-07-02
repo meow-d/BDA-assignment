@@ -9,7 +9,7 @@ import optuna
 from optuna_integration.lightgbm import LightGBMTuner
 from typing import Any
 from sklearn.preprocessing import OrdinalEncoder
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.metrics import mean_absolute_percentage_error, mean_squared_error, mean_absolute_error, r2_score
 import lightgbm as lgb
 from lightgbm import Booster
 
@@ -113,6 +113,7 @@ def evaluate(model: Booster, test_df: pd.DataFrame, encoder: OrdinalEncoder) -> 
     print("RMSE:", np.sqrt(mean_squared_error(y_true, pred)))
     print("MAE:", mean_absolute_error(y_true, pred))
     print("R²:", r2_score(y_true, pred))
+    print("MAPE:", mean_absolute_percentage_error(y_true, pred))
 
     # visualize
     results = pd.DataFrame({"datetime": test_df["datetime"], "actual": test_df["ridership"], "predicted": pred})
