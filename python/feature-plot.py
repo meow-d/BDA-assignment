@@ -35,7 +35,7 @@ df = (
     .sort_values("Importance", ascending=True)
 )
 
-plt.figure(figsize=(8, 10))
+plt.figure(figsize=(8, 10), dpi=150)
 plt.barh(df["Feature"], df["Importance"])
 plt.xlabel("Feature Importance")
 plt.ylabel("Feature")

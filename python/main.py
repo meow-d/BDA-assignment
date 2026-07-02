@@ -65,28 +65,30 @@ def make_X(chunk: pd.DataFrame, encoder: OrdinalEncoder) -> pd.DataFrame:
 
 
 def train_model(train_df: pd.DataFrame, val_df: pd.DataFrame, encoder: OrdinalEncoder) -> Booster:
+    X = make_X(train_df, encoder)
+    y = np.log1p(train_df["ridership"])
+    train_set = lgb.Dataset(X, label=y, categorical_feature=CAT_FEATURES)
+
+    X_val = make_X(val_df, encoder)
+    y_val = np.log1p(val_df["ridership"])
+    val_set = lgb.Dataset(X_val, label=y_val, categorical_feature=CAT_FEATURES, reference=train_set)
+
     # optimum hyperparameters found using optuna
     params: dict[str, Any] = {
         "random_state": 42,
         "verbose": 1,
         "force_col_wise": True,
-        "boosting_type": "gbdt",
-        "num_leaves": 47,
-        "learning_rate": 0.12338927224763702,
-        "min_child_samples": 29,
-        "subsample": 0.7526667257286987,
-        "subsample_freq": 1,
-        "colsample_bytree": 0.9413895414693264,
-        "feature_fraction": 0.4,
-        "objective": "quantile",
-        "alpha": 0.657140860312094,
+        "metric": "rmse",
+        "num_iterations": 5000,
+        "feature_pre_filter": False,
+        "lambda_l1": 5.3190490729446385,
+        "lambda_l2": 2.4581765830636204,
+        "num_leaves": 234,
+        "feature_fraction": 0.92,
+        "bagging_fraction": 0.8139342540105051,
+        "bagging_freq": 3,
+        "min_child_samples": 20,
     }
-    X = make_X(train_df, encoder)
-    y = np.log1p(train_df["ridership"])
-    train_set = lgb.Dataset(X, label=y, categorical_feature=CAT_FEATURES)
-    X_val = make_X(val_df, encoder)
-    y_val = np.log1p(val_df["ridership"])
-    val_set = lgb.Dataset(X_val, label=y_val, categorical_feature=CAT_FEATURES, reference=train_set)
     model = lgb.train(params, train_set, valid_sets=[val_set], callbacks=[lgb.early_stopping(20)])
 
     return model
