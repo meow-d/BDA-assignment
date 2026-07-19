@@ -22,20 +22,20 @@
       </operator>
       <operator activated="true" class="blending:split_data" compatibility="12.1.001" expanded="true" height="103" name="Split Data" width="90" x="447" y="187">
         <enumeration key="partitions">
-          <parameter key="ratio" value="0.8"/>
-          <parameter key="ratio" value="0.2"/>
+          <parameter key="ratio" value="0.99"/>
+          <parameter key="ratio" value="0.01"/>
         </enumeration>
         <parameter key="sampling_type" value="linear sampling"/>
         <parameter key="use_local_random_seed" value="false"/>
         <parameter key="local_random_seed" value="1992"/>
       </operator>
       <operator activated="true" class="concurrency:parallel_random_forest" compatibility="12.1.001" expanded="true" height="103" name="Random Forest" width="90" x="581" y="34">
-        <parameter key="number_of_trees" value="100"/>
+        <parameter key="number_of_trees" value="500"/>
         <parameter key="criterion" value="least_square"/>
         <parameter key="maximal_depth" value="10"/>
         <parameter key="apply_pruning" value="false"/>
         <parameter key="confidence" value="0.1"/>
-        <parameter key="apply_prepruning" value="false"/>
+        <parameter key="apply_prepruning" value="true"/>
         <parameter key="minimal_gain" value="0.01"/>
         <parameter key="minimal_leaf_size" value="2"/>
         <parameter key="minimal_size_for_split" value="4"/>
@@ -70,7 +70,6 @@
       <portSpacing port="sink_result 2" spacing="0"/>
       <portSpacing port="sink_result 3" spacing="0"/>
       <portSpacing port="sink_result 4" spacing="0"/>
-      <portSpacing port="sink_result 5" spacing="0"/>
     </process>
   </operator>
 </process>
