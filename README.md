@@ -10,13 +10,14 @@
 - dataset - csv dataset (git lfs required)
   - komuter_2026.csv - original from gov website
   - komuter_datetime.csv - date and time combined
-- python - lightgbm version. uses uv
-- rapidminer - deep learning version. rapidminer project and imported rapidminer dataset
+- lightgbm - lightgbm version. uv project
+- autots - autots version. uv project
+- rapidminer - processes for various rapidminer versions, plus imported rapidminer dataset
 
 ## lightgbm version
 ```
 # run
-cd python
+cd lightgbm
 source .venv/bin/activate
 uv run main.py # train model, evaluate, and visualize
 uv run main.py predict # same as default but uses existing saved model
@@ -28,6 +29,14 @@ uv add <package>
 # check
 uvx ty check
 pyright main.py # alternative
+```
+
+## autots version
+```
+cd autots
+source
+uv run main.py # run the automl, saves model template
+uv run main.py --predict # predict using already saved model template
 ```
 
 ## agent instructions
