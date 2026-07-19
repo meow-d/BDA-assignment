@@ -49,7 +49,7 @@ def load_routes() -> dict[tuple[str, str], pd.DataFrame]:
 
 def make_regressor(idx: pd.DatetimeIndex) -> pd.DataFrame:
     years = range(idx[0].year, idx[-1].year + 1)
-    my_holidays = holidays.Malaysia(years=years)
+    my_holidays = pd.DatetimeIndex(holidays.Malaysia(years=years).keys())
     reg = pd.DataFrame(index=idx)
     reg["is_holiday"] = reg.index.isin(my_holidays).astype(int)
     reg["dayofweek"] = reg.index.dayofweek
