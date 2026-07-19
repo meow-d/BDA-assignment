@@ -1,11 +1,13 @@
 # Hourly ridership demand forecasting for the Komuter service
 
 \>big data
+
 \>looks inside
+
 \>small data
 
 ## folder structure
-- dataset - csv dataset (git lfs? never heard of her)
+- dataset - csv dataset (git lfs required)
   - komuter_2026.csv - original from gov website
   - komuter_datetime.csv - date and time combined
 - python - lightgbm version. uses uv
