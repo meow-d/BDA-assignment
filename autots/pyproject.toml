@@ -1,0 +1,11 @@
+[project]
+name = "komuter-autots"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.10"
+dependencies = [
+    "autots>=1.0.3",
+    "holidays>=0.100",
+    "matplotlib>=3.10.9",
+    "pandas>=2.3.3",
+]
