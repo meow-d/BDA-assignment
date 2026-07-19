@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?><process version="12.1.001">
+  <context>
+    <input/>
+    <output/>
+    <macros/>
+  </context>
+  <operator activated="true" class="process" compatibility="12.1.001" expanded="true" name="Process">
+    <parameter key="logverbosity" value="init"/>
+    <parameter key="random_seed" value="2001"/>
+    <parameter key="send_mail" value="never"/>
+    <parameter key="notification_email" value=""/>
+    <parameter key="process_duration_for_mail" value="30"/>
+    <parameter key="encoding" value="SYSTEM"/>
+    <process expanded="true">
+      <operator activated="true" class="retrieve" compatibility="12.1.001" expanded="true" height="68" name="Retrieve" width="90" x="45" y="34">
+        <parameter key="repository_entry" value="komuter_combined"/>
+      </operator>
+      <operator activated="true" class="filter_examples" compatibility="12.1.001" expanded="true" height="103" name="Filter Examples" width="90" x="246" y="34">
+        <parameter key="parameter_expression" value=""/>
+        <parameter key="condition_class" value="custom_filters"/>
+        <parameter key="invert_filter" value="false"/>
+        <list key="filters_list">
+          <parameter key="filters_entry_key" value="origin.equals.KL Sentral"/>
+          <parameter key="filters_entry_key" value="destination.equals.Batu Caves"/>
+        </list>
+        <parameter key="filters_logic_and" value="true"/>
+        <parameter key="filters_check_metadata" value="true"/>
+      </operator>
+      <operator activated="true" class="time_series:forecast_validation" compatibility="10.3.001" expanded="true" height="145" name="Forecast Validation (2)" width="90" x="447" y="34">
+        <parameter key="time_series_attribute" value="ridership"/>
+        <parameter key="has_indices" value="false"/>
+        <parameter key="indices_attribute" value=""/>
+        <parameter key="sort_time_series" value="false"/>
+        <parameter key="expert_settings" value="false"/>
+        <parameter key="unit" value="example based"/>
+        <parameter key="windows_defined" value="from start"/>
+        <parameter key="custom_start_point" value="5"/>
+        <parameter key="custom_end_point" value="100"/>
+        <parameter key="window_size" value="5000"/>
+        <parameter key="custom_start_time" value="2000-01-01 00:00:00"/>
+        <parameter key="custom_end_time" value="2030-01-01 00:00:00"/>
+        <parameter key="date_format" value="yyyy-MM-dd HH:mm:ss"/>
+        <parameter key="window_size_time" value="1.Hours"/>
+        <parameter key="windows_stop_definition" value="from next window start"/>
+        <parameter key="window_start_attribute" value=""/>
+        <parameter key="window_stop_attribute" value=""/>
+        <parameter key="no_overlapping_windows" value="false"/>
+        <parameter key="step_size" value="1"/>
+        <parameter key="step_size_time" value="1.Minutes"/>
+        <parameter key="horizon_size" value="1"/>
+        <parameter key="horizon_size_time" value="1.Hours"/>
+        <parameter key="horizon_start_attribute" value=""/>
+        <parameter key="horizon_stop_attribute" value=""/>
+        <parameter key="empty_window_handling" value="add empty exampleset"/>
+        <parameter key="enable_parallel_execution" value="true"/>
+        <process expanded="true">
+          <operator activated="true" class="time_series:arima_trainer" compatibility="10.3.001" expanded="true" height="103" name="ARIMA (2)" width="90" x="179" y="34">
+            <parameter key="time_series_attribute" value="ridership"/>
+            <parameter key="has_indices" value="false"/>
+            <parameter key="indices_attribute" value=""/>
+            <parameter key="sort_time_series" value="false"/>
+            <parameter key="p:_order_of_the_autoregressive_model" value="0"/>
+            <parameter key="d:_degree_of_differencing" value="0"/>
+            <parameter key="q:_order_of_the_moving-average_model" value="2"/>
+            <parameter key="estimate_constant" value="true"/>
+            <parameter key="main_criterion" value="aic"/>
+            <parameter key="error_handling" value="use default forecast model"/>
+          </operator>
+          <connect from_port="training set" to_op="ARIMA (2)" to_port="example set"/>
+          <connect from_op="ARIMA (2)" from_port="forecast model" to_port="model"/>
+          <portSpacing port="source_training set" spacing="0"/>
+          <portSpacing port="sink_model" spacing="0"/>
+          <portSpacing port="sink_through 1" spacing="0"/>
+        </process>
+        <process expanded="true">
+          <operator activated="true" class="performance_regression" compatibility="12.1.001" expanded="true" height="82" name="Performance (2)" width="90" x="112" y="34">
+            <parameter key="main_criterion" value="first"/>
+            <parameter key="root_mean_squared_error" value="true"/>
+            <parameter key="absolute_error" value="true"/>
+            <parameter key="relative_error" value="false"/>
+            <parameter key="relative_error_lenient" value="false"/>
+            <parameter key="relative_error_strict" value="false"/>
+            <parameter key="normalized_absolute_error" value="false"/>
+            <parameter key="root_relative_squared_error" value="false"/>
+            <parameter key="squared_error" value="false"/>
+            <parameter key="correlation" value="false"/>
+            <parameter key="squared_correlation" value="true"/>
+            <parameter key="prediction_average" value="false"/>
+            <parameter key="spearman_rho" value="false"/>
+            <parameter key="kendall_tau" value="false"/>
+            <parameter key="skip_undefined_labels" value="true"/>
+            <parameter key="use_example_weights" value="true"/>
+          </operator>
+          <connect from_port="test set" to_op="Performance (2)" to_port="labelled data"/>
+          <connect from_op="Performance (2)" from_port="performance" to_port="performance 1"/>
+          <connect from_op="Performance (2)" from_port="example set" to_port="test set results"/>
+          <portSpacing port="source_test set" spacing="0"/>
+          <portSpacing port="source_through 1" spacing="0"/>
+          <portSpacing port="sink_test set results" spacing="0"/>
+          <portSpacing port="sink_performance 1" spacing="0"/>
+          <portSpacing port="sink_performance 2" spacing="0"/>
+        </process>
+      </operator>
+      <operator activated="false" class="filter_example_range" compatibility="12.1.001" expanded="true" height="82" name="Filter Example Range" width="90" x="447" y="238">
+        <parameter key="first_example" value="1"/>
+        <parameter key="last_example" value="1000"/>
+        <parameter key="invert_filter" value="false"/>
+      </operator>
+      <operator activated="false" class="optimize_parameters_evolutionary" compatibility="12.1.001" expanded="true" height="145" name="Optimize Parameters (Evolutionary)" width="90" x="581" y="238">
+        <list key="parameters">
+          <parameter key="ARIMA (3).p:_order_of_the_autoregressive_model" value="[0.0;5]"/>
+          <parameter key="ARIMA (3).d:_degree_of_differencing" value="[0.0;2]"/>
+          <parameter key="ARIMA (3).q:_order_of_the_moving-average_model" value="[0.0;5]"/>
+        </list>
+        <parameter key="error_handling" value="ignore error"/>
+        <parameter key="max_generations" value="20"/>
+        <parameter key="use_early_stopping" value="true"/>
+        <parameter key="generations_without_improval" value="2"/>
+        <parameter key="specify_population_size" value="false"/>
+        <parameter key="population_size" value="5"/>
+        <parameter key="keep_best" value="true"/>
+        <parameter key="mutation_type" value="gaussian_mutation"/>
+        <parameter key="selection_type" value="tournament"/>
+        <parameter key="tournament_fraction" value="0.25"/>
+        <parameter key="crossover_prob" value="0.9"/>
+        <parameter key="use_local_random_seed" value="false"/>
+        <parameter key="local_random_seed" value="1992"/>
+        <parameter key="show_convergence_plot" value="false"/>
+        <process expanded="true">
+          <operator activated="true" class="time_series:forecast_validation" compatibility="10.3.001" expanded="true" height="145" name="Forecast Validation (3)" width="90" x="313" y="34">
+            <parameter key="time_series_attribute" value="ridership"/>
+            <parameter key="has_indices" value="false"/>
+            <parameter key="indices_attribute" value=""/>
+            <parameter key="sort_time_series" value="false"/>
+            <parameter key="expert_settings" value="false"/>
+            <parameter key="unit" value="example based"/>
+            <parameter key="windows_defined" value="from start"/>
+            <parameter key="custom_start_point" value="5"/>
+            <parameter key="custom_end_point" value="100"/>
+            <parameter key="window_size" value="100"/>
+            <parameter key="custom_start_time" value="2000-01-01 00:00:00"/>
+            <parameter key="custom_end_time" value="2030-01-01 00:00:00"/>
+            <parameter key="date_format" value="yyyy-MM-dd HH:mm:ss"/>
+            <parameter key="window_size_time" value="1.Hours"/>
+            <parameter key="windows_stop_definition" value="from next window start"/>
+            <parameter key="window_start_attribute" value=""/>
+            <parameter key="window_stop_attribute" value=""/>
+            <parameter key="no_overlapping_windows" value="false"/>
+            <parameter key="step_size" value="1"/>
+            <parameter key="step_size_time" value="1.Minutes"/>
+            <parameter key="horizon_size" value="1"/>
+            <parameter key="horizon_size_time" value="1.Hours"/>
+            <parameter key="horizon_start_attribute" value=""/>
+            <parameter key="horizon_stop_attribute" value=""/>
+            <parameter key="empty_window_handling" value="add empty exampleset"/>
+            <parameter key="enable_parallel_execution" value="true"/>
+            <process expanded="true">
+              <operator activated="true" class="time_series:arima_trainer" compatibility="10.3.001" expanded="true" height="103" name="ARIMA (3)" width="90" x="179" y="34">
+                <parameter key="time_series_attribute" value="ridership"/>
+                <parameter key="has_indices" value="false"/>
+                <parameter key="indices_attribute" value=""/>
+                <parameter key="sort_time_series" value="false"/>
+                <parameter key="p:_order_of_the_autoregressive_model" value="0"/>
+                <parameter key="d:_degree_of_differencing" value="0"/>
+                <parameter key="q:_order_of_the_moving-average_model" value="2"/>
+                <parameter key="estimate_constant" value="true"/>
+                <parameter key="main_criterion" value="aic"/>
+                <parameter key="error_handling" value="use default forecast model"/>
+              </operator>
+              <connect from_port="training set" to_op="ARIMA (3)" to_port="example set"/>
+              <connect from_op="ARIMA (3)" from_port="forecast model" to_port="model"/>
+              <portSpacing port="source_training set" spacing="0"/>
+              <portSpacing port="sink_model" spacing="0"/>
+              <portSpacing port="sink_through 1" spacing="0"/>
+            </process>
+            <process expanded="true">
+              <operator activated="true" class="performance_regression" compatibility="12.1.001" expanded="true" height="82" name="Performance (3)" width="90" x="112" y="34">
+                <parameter key="main_criterion" value="first"/>
+                <parameter key="root_mean_squared_error" value="true"/>
+                <parameter key="absolute_error" value="true"/>
+                <parameter key="relative_error" value="false"/>
+                <parameter key="relative_error_lenient" value="false"/>
+                <parameter key="relative_error_strict" value="false"/>
+                <parameter key="normalized_absolute_error" value="false"/>
+                <parameter key="root_relative_squared_error" value="false"/>
+                <parameter key="squared_error" value="false"/>
+                <parameter key="correlation" value="false"/>
+                <parameter key="squared_correlation" value="true"/>
+                <parameter key="prediction_average" value="false"/>
+                <parameter key="spearman_rho" value="false"/>
+                <parameter key="kendall_tau" value="false"/>
+                <parameter key="skip_undefined_labels" value="true"/>
+                <parameter key="use_example_weights" value="true"/>
+              </operator>
+              <connect from_port="test set" to_op="Performance (3)" to_port="labelled data"/>
+              <connect from_op="Performance (3)" from_port="performance" to_port="performance 1"/>
+              <connect from_op="Performance (3)" from_port="example set" to_port="test set results"/>
+              <portSpacing port="source_test set" spacing="0"/>
+              <portSpacing port="source_through 1" spacing="0"/>
+              <portSpacing port="sink_test set results" spacing="0"/>
+              <portSpacing port="sink_performance 1" spacing="0"/>
+              <portSpacing port="sink_performance 2" spacing="0"/>
+            </process>
+          </operator>
+          <connect from_port="input 1" to_op="Forecast Validation (3)" to_port="example set"/>
+          <connect from_op="Forecast Validation (3)" from_port="model" to_port="result 1"/>
+          <connect from_op="Forecast Validation (3)" from_port="test result set" to_port="result 2"/>
+          <connect from_op="Forecast Validation (3)" from_port="performance 1" to_port="performance"/>
+          <portSpacing port="source_input 1" spacing="0"/>
+          <portSpacing port="source_input 2" spacing="0"/>
+          <portSpacing port="sink_performance" spacing="0"/>
+          <portSpacing port="sink_result 1" spacing="0"/>
+          <portSpacing port="sink_result 2" spacing="0"/>
+          <portSpacing port="sink_result 3" spacing="0"/>
+        </process>
+      </operator>
+      <connect from_op="Retrieve" from_port="output" to_op="Filter Examples" to_port="example set input"/>
+      <connect from_op="Filter Examples" from_port="example set output" to_op="Forecast Validation (2)" to_port="example set"/>
+      <connect from_op="Forecast Validation (2)" from_port="model" to_port="result 1"/>
+      <connect from_op="Forecast Validation (2)" from_port="example set" to_port="result 2"/>
+      <connect from_op="Forecast Validation (2)" from_port="test result set" to_port="result 3"/>
+      <connect from_op="Forecast Validation (2)" from_port="performance 1" to_port="result 4"/>
+      <connect from_op="Filter Example Range" from_port="example set output" to_op="Optimize Parameters (Evolutionary)" to_port="input 1"/>
+      <portSpacing port="source_input 1" spacing="0"/>
+      <portSpacing port="sink_result 1" spacing="0"/>
+      <portSpacing port="sink_result 2" spacing="0"/>
+      <portSpacing port="sink_result 3" spacing="0"/>
+      <portSpacing port="sink_result 4" spacing="0"/>
+      <portSpacing port="sink_result 5" spacing="0"/>
+    </process>
+  </operator>
+</process>
