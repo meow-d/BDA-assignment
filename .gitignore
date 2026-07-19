@@ -5,3 +5,4 @@
 model.txt
 __pycache__/
 autots/model_template.csv
+dataset/komuter_lightgbm_preprocessed.csv
